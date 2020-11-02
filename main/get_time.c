@@ -93,6 +93,7 @@ static const char *payload = "Message from ESP32 ";
 #define TEST_RELOAD      true
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    static int state = 0;
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 static void udp_client_task(void *pvParameters)
 {
@@ -172,6 +173,7 @@ static void udp_client_task(void *pvParameters)
 
 	time_t txTm = ntohl(packet.txTm_s);
 	txTm = (time_t)(txTm -NTP_TIMESTAMP_DELTA);
+	txTm = txTm + ((5 * 60 + 30)*60);
 	ptm = localtime(&txTm);
 
 	strftime(buf, 256, "%G-%m-%d", ptm);
@@ -196,7 +198,6 @@ static void udp_client_task(void *pvParameters)
 }
 
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -211,18 +212,13 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             ESP_LOGI(TAG, "retry to connect to the AP");
 
 /////////////////////////////////////////
+
     gpio_config_t io_conf;
-    //disable interrupt
     io_conf.intr_type = GPIO_INTR_DISABLE;
-    //set as output mode
     io_conf.mode = GPIO_MODE_OUTPUT;
-    //bit mask of the pins that you want to set,e.g.GPIO15/16
     io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    //disable pull-down mode
     io_conf.pull_down_en = 0;
-    //disable pull-up mode
     io_conf.pull_up_en = 0;
-    //configure GPIO with the given settings
     gpio_config(&io_conf);
  
     gpio_set_level(2,0);
@@ -340,19 +336,24 @@ static void echo_task()
 
 void hw_timer_callback1(void *arg)
 {
-    static int state = 0;
-state = state +1;
-  //  gpio_set_level(GPIO_OUTPUT_IO_0, (state ++) % 2);
 
 if(state!=5)
 {
-hw_timer_alarm_us(1000*1000*1, TEST_RELOAD);
+    state++;
+    gpio_set_level(GPIO_OUTPUT_IO_0,1);
 }
 
 if(state==5)
 {
-state=0;
-/*
+	state=0;
+    gpio_set_level(GPIO_OUTPUT_IO_0,0);
+}
+}
+
+
+static void timer_reset_task()
+{
+	
     gpio_config_t io_conf;
     //disable interrupt 
     io_conf.intr_type = GPIO_INTR_DISABLE;
@@ -366,24 +367,14 @@ state=0;
     io_conf.pull_up_en = 0;
     //configure GPIO with the given settings
     gpio_config(&io_conf);
-    
-    gpio_set_level(2,0);
-  //  gpio_set_level(2, (state ++) % 2);
-*/
-esp_restart();
-}
-}
 
 
-static void timer_reset_task()
-{
     ESP_LOGI(TAG, "Initialize hw_timer for callback1");
     hw_timer_init(hw_timer_callback1, NULL);
     ESP_LOGI(TAG, "Set hw_timer timing time 100us with reload");
-    hw_timer_alarm_us(1000*1000,TEST_ONE_SHOT);
-    vTaskDelay(1000 / portTICK_RATE_MS);
+    hw_timer_alarm_us(1000*1000,TEST_RELOAD);
+    vTaskDelay(1000*1000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Deinitialize hw_timer for callback1");
-
 }
 
 void app_main()
@@ -397,8 +388,7 @@ void app_main()
 
     xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
 
-//    xTaskCreate(timer_reset_task, "timer_reset", 1024, NULL, 10, NULL);
-
+    xTaskCreate(timer_reset_task, "timer_reset", 1024, NULL, 10, NULL);
 }
 
 
