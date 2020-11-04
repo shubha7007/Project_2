@@ -64,6 +64,18 @@ static int s_retry_num = 0;
     uint32_t txTm_f;         
   } ntp_packet;              // Total: 384 bits or 48 bytes.
 
+struct {
+char host_name[100];
+char zone[100];
+char format[5];
+int format_1;
+char offset_1[3];
+char offset_2[3];
+int offset_1i;
+int offset_2i;
+} config_tmp;
+
+char *pos;
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <sys/param.h>
@@ -94,107 +106,117 @@ static const char *payload = "Message from ESP32 ";
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     static int state = 0;
+    static int state2 = 0;
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 static void udp_client_task(void *pvParameters)
 {
-    char rx_buffer[128];
-    char addr_str[128];
-    int addr_family;
-    int ip_protocol;
+	char addr_str[128];
+	int addr_family;
+	int ip_protocol;
+
+	struct tm * ptm;
+	struct tm ptm1;
+	char buf[100]={0};
+	ntp_packet packet = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	memset( &packet, 0, sizeof( ntp_packet ) );
+	*( ( char * ) &packet + 0 ) = 0x1b; // Represents 27 in base 10 or 00011011 in base 2. 
+
+	//#ifdef CONFIG_EXAMPLE_IPV4
+	struct sockaddr_in destAddr;
+	//destAddr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+	destAddr.sin_addr.s_addr = inet_addr(config_tmp.host_name);
+	destAddr.sin_family = AF_INET;
+	destAddr.sin_port = htons(PORT);
+	addr_family = AF_INET;
+	ip_protocol = IPPROTO_IP;
+	inet_ntoa_r(destAddr.sin_addr, addr_str, sizeof(addr_str) - 1);
+	//#else  IPV6
+	/*
+	   struct sockaddr_in6 destAddr;
+	   inet6_aton(HOST_IP_ADDR, &destAddr.sin6_addr);
+	   destAddr.sin6_family = AF_INET6;
+	   destAddr.sin6_port = htons(PORT);
+	   destAddr.sin6_scope_id = tcpip_adapter_get_netif_index(TCPIP_ADAPTER_IF_STA);
+	   addr_family = AF_INET6;
+	   ip_protocol = IPPROTO_IPV6;
+	   inet6_ntoa_r(destAddr.sin6_addr, addr_str, sizeof(addr_str) - 1);
+	 */
+	//#endif
+
+	int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
+	if (sock < 0) {
+		ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+		//  break;
+	}
+
+	int err = sendto(sock, (char* ) &packet, sizeof(ntp_packet), 0, (struct sockaddr *) & destAddr, sizeof(destAddr));
+	if (err < 0) {
+		ESP_LOGE(TAG, "Error occured during sending: errno %d", errno);
+		//               break;
+	}
+	ESP_LOGI(TAG, "Message sent");
+
+	struct sockaddr_in sourceAddr; // Large enough for both IPv4 or IPv6
+	socklen_t socklen = sizeof(sourceAddr);
+	int len = recvfrom(sock, (char*) &packet, sizeof(ntp_packet), 0, (struct sockaddr *)&sourceAddr, &socklen);
+
+	// Error occured during receiving
+	if (len < 0) {
+		ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+		//break;
+	}
+	// Data received
+	else {
+
+		time_t txTm = ntohl(packet.txTm_s);
+		txTm = (time_t)(txTm -NTP_TIMESTAMP_DELTA);
+		//txTm = txTm + ((5 * 60 + 30)*60);
 
 
-    struct tm * ptm;
-    struct tm ptm1;
-    char buf[100]={0};
-    ntp_packet packet = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    memset( &packet, 0, sizeof( ntp_packet ) );
-    *( ( char * ) &packet + 0 ) = 0x1b; // Represents 27 in base 10 or 00011011 in base 2. 
+		uart_write_bytes(UART_NUM_0, (const char *)config_tmp.offset_1, strlen(config_tmp.offset_1));
+		//uart_write_bytes(UART_NUM_0, (const char *)config_tmp.offset_2, strlen(config_tmp.offset_2));
 
-//    while (1) {
+		txTm = txTm + ((config_tmp.offset_1i * 60 + config_tmp.offset_2i)*60);
+		ptm = localtime(&txTm);
 
-//#ifdef CONFIG_EXAMPLE_IPV4
-        struct sockaddr_in destAddr;
-        destAddr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
-        destAddr.sin_family = AF_INET;
-        destAddr.sin_port = htons(PORT);
-        addr_family = AF_INET;
-        ip_protocol = IPPROTO_IP;
-        inet_ntoa_r(destAddr.sin_addr, addr_str, sizeof(addr_str) - 1);
-//#else // IPV6
-/*
-        struct sockaddr_in6 destAddr;
-        inet6_aton(HOST_IP_ADDR, &destAddr.sin6_addr);
-        destAddr.sin6_family = AF_INET6;
-        destAddr.sin6_port = htons(PORT);
-        destAddr.sin6_scope_id = tcpip_adapter_get_netif_index(TCPIP_ADAPTER_IF_STA);
-        addr_family = AF_INET6;
-        ip_protocol = IPPROTO_IPV6;
-        inet6_ntoa_r(destAddr.sin6_addr, addr_str, sizeof(addr_str) - 1);
-*/
-//#endif
+		switch(config_tmp.format_1)
+		{
+			case 1:
+				strftime(buf, 256, "%G-%m-%d", ptm);
+				printf("%s",buf);
+				printf("  %2d:%02d:%02d\n", ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+				break;
+			case 2:
+				strftime(buf, 256, "%y-%m-%d", ptm);
+				printf("%s",buf);
+				printf ("  %2d:%02d:%02d\n", ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+				break;
+			case 3:
+				strftime(buf, 256, "%G-%h-%d <%p>", ptm);
+				printf("%s",buf);
+				printf ("  %2d:%02d:%02d\n", ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+				break;
+			case 4:
+				printf ("%2d:%02d:%02d", ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+				strftime(buf, 256, "  %d %h %G\n", ptm);
+				printf("%s",buf);
+				break;
 
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0) {
-            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-          //  break;
-        }
-        ESP_LOGI(TAG, "Socket created");
-
-        while (1) {
-
-            //int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *) & destAddr, sizeof(destAddr));
-            int err = sendto(sock, (char* ) &packet, sizeof(ntp_packet), 0, (struct sockaddr *) & destAddr, sizeof(destAddr));
-            if (err < 0) {
-                ESP_LOGE(TAG, "Error occured during sending: errno %d", errno);
-                break;
-            }
-            ESP_LOGI(TAG, "Message sent");
-
-            struct sockaddr_in sourceAddr; // Large enough for both IPv4 or IPv6
-            socklen_t socklen = sizeof(sourceAddr);
-            //int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&sourceAddr, &socklen);
-            int len = recvfrom(sock, (char*) &packet, sizeof(ntp_packet), 0, (struct sockaddr *)&sourceAddr, &socklen);
-
-            // Error occured during receiving
-            if (len < 0) {
-                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-                //break;
-            }
-            // Data received
-            else {
-                rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
-                ESP_LOGI(TAG, "Received %d bytes from %s:", len, addr_str);
-                //ESP_LOGI(TAG, "%s", rx_buffer);
-
-/////////////////////////////////////////////////////////	
-	
-	//setenv("TZ","CST-8",1);
-	//tzset();
-
-	time_t txTm = ntohl(packet.txTm_s);
-	txTm = (time_t)(txTm -NTP_TIMESTAMP_DELTA);
-	txTm = txTm + ((5 * 60 + 30)*60);
-	ptm = localtime(&txTm);
-
-	strftime(buf, 256, "%G-%m-%d", ptm);
-	printf("%s",buf);
-	printf("  %2d:%02d:%02d\n", ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+			default:
+				printf("wrong format");
+		}
 
 
-/////////////////////////////////////////////////////////	
+	}
 
-            }
+	vTaskDelay(2000 / portTICK_PERIOD_MS);
 
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
-        }
-
-        if (sock != -1) {
-            ESP_LOGE(TAG, "Shutting down socket and restarting...");
-            shutdown(sock, 0);
-            close(sock);
-        }
-  //  }
-    vTaskDelete(NULL);
+	if (sock != -1) {
+		ESP_LOGE(TAG, "Shutting down socket and restarting...");
+		shutdown(sock, 0);
+		close(sock);
+	}
+	vTaskDelete(NULL);
 }
 
 
@@ -210,21 +232,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGI(TAG, "retry to connect to the AP");
-
-/////////////////////////////////////////
-
-    gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    io_conf.pull_down_en = 0;
-    io_conf.pull_up_en = 0;
-    gpio_config(&io_conf);
- 
-    gpio_set_level(2,0);
-/////////////////////////////////////////
-
         } else {
+    		gpio_set_level(2,0);
+
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
         ESP_LOGI(TAG,"connect to the AP fail");
@@ -294,59 +304,180 @@ void wifi_init_sta(void)
 static void echo_task()
 {
 
-    char cmd[81];
-    int i=0;
+	char cmd[81];
+	int i=0;
 
-    // Configure parameters of an UART driver,
-    // communication pins and install the driver
-    uart_config_t uart_config = {
-        .baud_rate = 74880,
-        .data_bits = UART_DATA_8_BITS,
-        .parity    = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
-    };
-    uart_param_config(UART_NUM_0, &uart_config);
-    uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
+	////////////////////////////////////////////////////////////
+	int n=0,s=0,j=0;
+	char target[10][25];
+	////////////////////////////////////////////////////////////
 
-    // Configure a temporary buffer for the incoming data
-    uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
-    uint8_t *ch = (uint8_t *) malloc(BUF_SIZE);
 
-    while (1) {
-        // Read data from the UART
-        int len = uart_read_bytes(UART_NUM_0, ch, BUF_SIZE, 20 / portTICK_RATE_MS);
+	// Configure parameters of an UART driver,
+	// communication pins and install the driver
+	uart_config_t uart_config = {
+		.baud_rate = 74880,
+		.data_bits = UART_DATA_8_BITS,
+		.parity    = UART_PARITY_DISABLE,
+		.stop_bits = UART_STOP_BITS_1,
+		.flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+	};
+	uart_param_config(UART_NUM_0, &uart_config);
+	uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
 
-        if(len!=0){
-                if(*ch == '\n' || *ch == '\r'){
-                cmd[i] = 0;
-                uart_write_bytes(UART_NUM_0, (const char *)cmd, i);
-                i = 0;
-                }
-                else{
-                        if(i < sizeof(cmd)){
-                        cmd[i++] = *ch;
-                        }
-                }
+	// Configure a temporary buffer for the incoming data
+	uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
+	uint8_t *ch = (uint8_t *) malloc(BUF_SIZE);
 
-        }
 
-    }
-}
+//	config_tmp.host_name = CONFIG_TMP_IP;
+	strcpy(config_tmp.host_name,CONFIG_TMP_IP);
+	uart_write_bytes(UART_NUM_0, (const char *)config_tmp.host_name, strlen(config_tmp.host_name));
+
+//	config_tmp.zone = CONFIG_TMP_ZONE;
+	strcpy(config_tmp.zone,CONFIG_TMP_ZONE);
+	uart_write_bytes(UART_NUM_0, (const char *)config_tmp.zone, strlen(config_tmp.zone));
+
+	config_tmp.format_1 = CONFIG_TMP_FORMAT;
+
+	while (1) {
+		// Read data from the UART
+		int len = uart_read_bytes(UART_NUM_0, ch, BUF_SIZE, 20 / portTICK_RATE_MS);
+
+		if(len!=0){
+			if(*ch == '\n' || *ch == '\r'){
+				//cmd[i++] = '\0';
+				cmd[i] = 0;
+				i = 0;
+
+				//uart_write_bytes(UART_NUM_0, (const char *)cmd, i);
+
+				if(strcmp(cmd,"./get_time")==0){
+				//	xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+				}
+
+				for(s=0; 1; s++)
+				{
+					//if(cmd[s] != ' ' || cmd[s] != '\0' || cmd[s] != 0 ){
+					if(cmd[s] != ' ' && cmd[s]!= '\0' && cmd[s] != 0 ){
+						target[n][j++] = cmd[s];
+						//uart_write_bytes(UART_NUM_0, (const char *)target[n], j);
+					}
+					else{
+						target[n][j++]='\0';
+						//printf("ya %s:",target[n]);
+						//uart_write_bytes(UART_NUM_0, (const char *)target[n], j);
+						n++;
+						j=0;
+						if(cmd[s]== '\0' || cmd[s] == 0)
+						{
+					
+					for(s=0; s<n ;s++)
+					{
+                                                if(strcmp(cmd,"./get_time")==0){
+                                                pos = strstr(config_tmp.zone,"UTC");
+                                                pos = pos+3;
+                                                config_tmp.offset_1[0]=*(pos+1);
+                                                config_tmp.offset_1[1]=*(pos+2);
+                                                config_tmp.offset_1[2]='\0';
+
+                                                pos = strstr(config_tmp.zone,":");
+                                                config_tmp.offset_2[0]=*(pos+1);
+                                                config_tmp.offset_2[1]=*(pos+2);
+                                                config_tmp.offset_2[2]='\0';
+						xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+						}
+
+						if(strstr(target[s],"-s"))
+						{
+						//uart_write_bytes(UART_NUM_0, (const char *)target[s+1], strlen(target[s+1]));
+						strcpy(config_tmp.host_name,target[s+1]);
+						uart_write_bytes(UART_NUM_0, (const char *)config_tmp.host_name, strlen(config_tmp.host_name));
+						}
+						else if(strstr(target[s],"-z"))
+						{
+						//uart_write_bytes(UART_NUM_0, (const char *)target[s+1], strlen(target[s+1]));
+						strcpy(config_tmp.zone,target[s+1]);
+						uart_write_bytes(UART_NUM_0, (const char *)config_tmp.zone, strlen(config_tmp.zone));
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+						pos = strstr(config_tmp.zone,"UTC");
+						pos = pos+3;
+						config_tmp.offset_1[0]=*(pos+1);
+						config_tmp.offset_1[1]=*(pos+2);
+						config_tmp.offset_1[2]='\0';
+
+						pos = strstr(config_tmp.zone,":");
+						config_tmp.offset_2[0]=*(pos+1);
+						config_tmp.offset_2[1]=*(pos+2);
+						config_tmp.offset_2[2]='\0';;
+
+					//	uart_write_bytes(UART_NUM_0, (const char *)config_tmp.offset_1, strlen(config_tmp.offset_1));
+					//	uart_write_bytes(UART_NUM_0, (const char *)config_tmp.offset_2, strlen(config_tmp.offset_2));
+						
+						config_tmp.offset_1i = atoi(config_tmp.offset_1);
+						config_tmp.offset_2i = atoi(config_tmp.offset_2);
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+						}
+						else if(strstr(target[s],"-f"))
+						{
+						//uart_write_bytes(UART_NUM_0, (const char *)target[s+1], strlen(target[s+1]));
+						strcpy(config_tmp.format,target[s+1]);
+						config_tmp.format_1=atoi(config_tmp.format);
+						uart_write_bytes(UART_NUM_0, (const char *)config_tmp.format, strlen(config_tmp.format));
+						}
+					}
+
+
+
+							n=0;
+							//printf("ya %s:",target[n]);
+							//uart_write_bytes(UART_NUM_0, (const char *)target[n], j);
+							break;
+						}
+						//break;
+					}
+				}
+				}
+				else{
+					if(i < sizeof(cmd)){
+						cmd[i++] = *ch;
+						uart_write_bytes(UART_NUM_0, (const char *)ch, 1);
+					}
+				}
+
+			}
+
+		}
+	}
 
 void hw_timer_callback1(void *arg)
 {
 
-if(state!=5)
-{
     state++;
-    gpio_set_level(GPIO_OUTPUT_IO_0,1);
-}
-
-if(state==5)
+if(state==60)
 {
-	state=0;
-    gpio_set_level(GPIO_OUTPUT_IO_0,0);
+    state =0;
+
+// if want here will come rtc code
+    if(1){
+    state2++;
+    }
+    else{ 
+    state2=0;
+    }
+    xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+    //gpio_set_level(GPIO_OUTPUT_IO_0,1);
+}
+else if(state2==5)
+{
+    state2 = 0;
+    xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+    ///gpio_set_level(GPIO_OUTPUT_IO_0,0);
 }
 }
 
@@ -367,7 +498,7 @@ static void timer_reset_task()
     io_conf.pull_up_en = 0;
     //configure GPIO with the given settings
     gpio_config(&io_conf);
-
+    gpio_set_level(2,1);
 
     ESP_LOGI(TAG, "Initialize hw_timer for callback1");
     hw_timer_init(hw_timer_callback1, NULL);
@@ -384,24 +515,13 @@ void app_main()
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
 
-    xTaskCreate(echo_task, "uart_echo_task", 1024, NULL, 10, NULL);
+    //xTaskCreate(echo_task, "uart_echo_task", 1024, NULL, 10, NULL);
+    xTaskCreate(echo_task, "uart_echo_task", 4096, NULL, 10, NULL);
 
-    xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+//    xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
 
     xTaskCreate(timer_reset_task, "timer_reset", 1024, NULL, 10, NULL);
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
