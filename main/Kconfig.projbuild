@@ -2,13 +2,13 @@ menu "Example Configuration"
 
     config ESP_WIFI_SSID
         string "WiFi SSID"
-        default "myssid"
+        default "Redmi_k20"
         help
             SSID (network name) for the example to connect to.
 
     config ESP_WIFI_PASSWORD
         string "WiFi Password"
-        default "mypassword"
+        default "12345777"
         help
             WiFi password (WPA or WPA2) for the example to use.
 
@@ -30,7 +30,12 @@ menu "Example Configuration"
 	    time zone for getting time
     config TMP_FORMAT
 	int "FORMAT"
-	default "4"
+	default 4
 	help
 	    there are 4 format(1/2/3/4)
+    config TMP_PORT
+	int "PORT"
+	default 123
+	help
+	    enter port no
 endmenu
