@@ -103,6 +103,14 @@ static void udp_client_task(void *pvParameters)
 
 	struct sockaddr_in destAddr;
 	destAddr.sin_addr.s_addr = inet_addr(config_tmp.host_name);
+	
+	if(destAddr.sin_addr.s_addr == INADDR_NONE)
+	{
+		printf("\nEnter proper Server_ip\n");
+		vTaskDelete(NULL);
+		//exit(0);
+	}
+
 	destAddr.sin_family = AF_INET;
 	destAddr.sin_port = htons(PORT);
 	addr_family = AF_INET;
@@ -111,13 +119,13 @@ static void udp_client_task(void *pvParameters)
 
 	int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
 	if (sock < 0) {
-		ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+		printf("\nunable to create socket\n");
 		//  break;
 	}
 
 	int err = sendto(sock, (char* ) &packet, sizeof(ntp_packet), 0, (struct sockaddr *) & destAddr, sizeof(destAddr));
 	if (err < 0) {
-		ESP_LOGE(TAG, "Error occured during sending: errno %d", errno);
+		printf("\nunable to send packet\n");
 		//               break;
 	}
 
@@ -127,7 +135,7 @@ static void udp_client_task(void *pvParameters)
 	int len = recvfrom(sock, (char*) &packet, sizeof(ntp_packet), 0, (struct sockaddr *)&sourceAddr, &socklen);
 
 	if (len < 0) {
-		ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+		printf("\nunable to receive packet\n");
 		//break;
 	}
 	else {
@@ -265,6 +273,7 @@ static void echo_task()
 	char cmd[81];
 	int i=0,n=0,s=0,j=0;
 	char target[10][25];
+	int error=0;
 
 	// Configure parameters of an UART driver,
 	// communication pins and install the driver
@@ -299,136 +308,169 @@ static void echo_task()
 				//cmd[i++] = '\0';
 				cmd[i] = 0;
 				i = 0;
+				memset(target,0,sizeof(target));				
 
 				for(s=0; 1; s++)
 				{
+
 					if(cmd[s] != ' ' && cmd[s]!= '\0' && cmd[s] != 0 ){
+						//  storing each letter
 						target[n][j++] = cmd[s];
 						//uart_write_bytes(UART_NUM_0, (const char *)target[n], j);
 					}
 					else{
+						//  storing each word
 						target[n][j++]='\0';
 						n++;
 						j=0;
+					}
 
-						if(cmd[s]== '\0' || cmd[s] == 0)
-						{
+					if(cmd[s]== '\0' || cmd[s] == 0)
+					{
 
-							if(strcmp(cmd,"./get_time")==0){
-								strcpy(config_tmp.host_name,CONFIG_TMP_IP);
-								strcpy(config_tmp.zone,CONFIG_TMP_ZONE);
+						//if(strcmp(cmd,"./get_time")==0){
+						if(strcmp(cmd,"./get_time")==0){
+							strcpy(config_tmp.host_name,CONFIG_TMP_IP);
+							strcpy(config_tmp.zone,CONFIG_TMP_ZONE);
 
-								config_tmp.format_1 = CONFIG_TMP_FORMAT;
-								pos = strstr(config_tmp.zone,"UTC");
-								pos = pos+3;
-
-								if((*(pos+1) >= 48 && *(pos+1) <= 50)){
-								config_tmp.offset_1[0]=*(pos+1);
-								}
-								else{
-								break;
-								}
-								if(*(pos+2) >= 48 && *(pos+2) <= 57){
-								config_tmp.offset_1[1]=*(pos+2);
-								}else
-								{
-								break;	
-								}
-								config_tmp.offset_1[2]='\0';
-								
-								pos = strstr(config_tmp.zone,":");
-								if(*(pos+1) >= 48 && *(pos+1) <= 54){
-								config_tmp.offset_2[0]=*(pos+1);
-								}
-								else{
-								break;
-								}
-								if(*(pos+2) >= 48 && *(pos+2) <= 57){
-								config_tmp.offset_2[1]=*(pos+2);
-								}
-								else{
-								break;
-								}
-								config_tmp.offset_2[2]='\0';
-
-								config_tmp.offset_1i = atoi(config_tmp.offset_1);
-								config_tmp.offset_2i = atoi(config_tmp.offset_2);
-								xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+                                                        if(CONFIG_TMP_FORMAT>0 && CONFIG_TMP_FORMAT <5){
+							config_tmp.format_1 = CONFIG_TMP_FORMAT;
+							}
+							else{
+								printf("\nEnter correct Format\n");
 								break;
 							}
+							
+							pos = strstr(config_tmp.zone,"UTC");
+							pos = pos+3;
 
-							if(strstr(cmd,"./get_time")!=0){
+							if((*(pos+1) >= 48 && *(pos+1) <= 50)){
+								config_tmp.offset_1[0]=*(pos+1);
+							}
+							else{
+								printf("\nEnter correct timezone\n");
+								break;
+							}
+							if(*(pos+2) >= 48 && *(pos+2) <= 57){
+								config_tmp.offset_1[1]=*(pos+2);
+							}else
+							{
+								printf("\nEnter correct timezone\n");
+								break;	
+							}
+							config_tmp.offset_1[2]='\0';
+
+							pos = strstr(config_tmp.zone,":");
+							if(*(pos+1) >= 48 && *(pos+1) <= 54){
+								config_tmp.offset_2[0]=*(pos+1);
+							}
+							else{
+								printf("\nEnter correct timezone\n");
+								break;
+							}
+							if(*(pos+2) >= 48 && *(pos+2) <= 57){
+								config_tmp.offset_2[1]=*(pos+2);
+							}
+							else{
+								printf("\nEnter correct timezone\n");
+								break;
+							}
+							config_tmp.offset_2[2]='\0';
+
+							config_tmp.offset_1i = atoi(config_tmp.offset_1);
+							config_tmp.offset_2i = atoi(config_tmp.offset_2);
+						//if(strcmp(cmd,"./get_time")==0){
+							xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+							break;
+						}
+
+						else if(strstr(cmd,"./get_time")!=0){
 							for(s=0; s<n ;s++)
 							{
-								if(strstr(target[s],"-s"))
+								if(strcmp(target[s],"-s")==0)
 								{
 									strcpy(config_tmp.host_name,target[s+1]);
 								}
-								else if(strstr(target[s],"-z"))
+								else if(strcmp(target[s],"-z")==0)
 								{
 									strcpy(config_tmp.zone,target[s+1]);
 
 									pos = strstr(config_tmp.zone,"UTC");
 									pos = pos+3;
-									/*
-									config_tmp.offset_1[0]=*(pos+1);
-									config_tmp.offset_1[1]=*(pos+2);
+
+									if((*(pos+1) >= 48 && *(pos+1) <= 50)){
+										config_tmp.offset_1[0]=*(pos+1);
+									}
+									else{
+										printf("\nEnter correct timezone\n");
+										error=1;
+										break;
+									}
+									if(*(pos+2) >= 48 && *(pos+2) <= 57){
+										config_tmp.offset_1[1]=*(pos+2);
+									}else
+									{
+										printf("\nEnter correct timezone\n");
+										error=1;
+										break;
+									}
 									config_tmp.offset_1[2]='\0';
 
 									pos = strstr(config_tmp.zone,":");
-									config_tmp.offset_2[0]=*(pos+1);
-									config_tmp.offset_2[1]=*(pos+2);
+									if(*(pos+1) >= 48 && *(pos+1) <= 54){
+										config_tmp.offset_2[0]=*(pos+1);
+									}
+									else{
+										printf("\nEnter correct timezone\n");
+										error=1;
+										break;
+									}
+									if(*(pos+2) >= 48 && *(pos+2) <= 57){
+										config_tmp.offset_2[1]=*(pos+2);
+									}
+									else{
+										printf("\nEnter correct timezone\n");
+										error=1;
+										break;
+									}
 									config_tmp.offset_2[2]='\0';
-									*/
-
-                                                                if((*(pos+1) >= 48 && *(pos+1) <= 50)){
-                                                                config_tmp.offset_1[0]=*(pos+1);
-                                                                }
-                                                                else{
-                                                                break;
-                                                                }
-                                                                if(*(pos+2) >= 48 && *(pos+2) <= 57){
-                                                                config_tmp.offset_1[1]=*(pos+2);
-                                                                }else
-                                                                {
-                                                                break;
-                                                                }
-                                                                config_tmp.offset_1[2]='\0';
-
-                                                                pos = strstr(config_tmp.zone,":");
-                                                                if(*(pos+1) >= 48 && *(pos+1) <= 54){
-                                                                config_tmp.offset_2[0]=*(pos+1);
-                                                                }
-                                                                else{
-                                                                break;
-                                                                }
-                                                                if(*(pos+2) >= 48 && *(pos+2) <= 57){
-                                                                config_tmp.offset_2[1]=*(pos+2);
-                                                                }
-                                                                else{
-                                                                break;
-                                                                }
-                                                                config_tmp.offset_2[2]='\0';
 
 
 									config_tmp.offset_1i = atoi(config_tmp.offset_1);
 									config_tmp.offset_2i = atoi(config_tmp.offset_2);
 
 								}
-								else if(strstr(target[s],"-f"))
+								else if(strcmp(target[s],"-f")==0)
 								{
 									strcpy(config_tmp.format,target[s+1]);
 									config_tmp.format_1=atoi(config_tmp.format);
+									if(config_tmp.format_1 <1 && config_tmp.format_1 > 4){
+										printf("\nEnter correct Format\n");
+										error=1;
+										break;
+									}
 								}
+								//xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+								//break;
 							}
-							xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+							if(error == 1)
+							{
+								//xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+								error=0;
+								break;
 							}
+								xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
 
 							n=0;
 							break;
 						}
+						else{
+							printf("\nPlease enter cmd properly\n");
+							break;
+						}
 					}
 				}
+
 			}
 			else{
 				if(i < sizeof(cmd)){
