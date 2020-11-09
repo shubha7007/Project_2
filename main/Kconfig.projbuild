@@ -30,7 +30,7 @@ menu "Example Configuration"
 	    time zone for getting time
     config TMP_FORMAT
 	int "FORMAT"
-	default 4
+	default 1
 	help
 	    there are 4 format(1/2/3/4)
     config TMP_PORT
@@ -38,4 +38,15 @@ menu "Example Configuration"
 	default 123
 	help
 	    enter port no
+    config AP_CON
+	int "AP connection"
+	default 2
+	help
+	    led1 gpio
+
+    config RTC_NO
+	int "RTC not updated"
+	default 5
+	help
+	    led2 gpio
 endmenu

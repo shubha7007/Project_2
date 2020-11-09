@@ -33,8 +33,11 @@
 #define WIFI_FAIL_BIT      BIT1
 
 #define BUF_SIZE (1024)
-#define GPIO_OUTPUT_IO_0    2
+
+#define GPIO_OUTPUT_IO_0    CONFIG_AP_CON
 #define GPIO_OUTPUT_PIN_SEL  (1ULL<<GPIO_OUTPUT_IO_0)
+#define GPIO_OUTPUT_IO_1    CONFIG_RTC_NO
+#define GPIO_OUTPUT_PIN_SEL_2  (1ULL<<GPIO_OUTPUT_IO_1)
 
 #define NTP_TIMESTAMP_DELTA 2208988800ull
 
@@ -45,6 +48,7 @@
 #define EXAMPLE_ESP_WIFI_SSID      CONFIG_ESP_WIFI_SSID
 #define EXAMPLE_ESP_WIFI_PASS      CONFIG_ESP_WIFI_PASSWORD
 #define EXAMPLE_ESP_MAXIMUM_RETRY  CONFIG_ESP_MAXIMUM_RETRY
+//#define MSG_NOBLOCK 0x01
 
 static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
@@ -78,6 +82,7 @@ struct {
 	char offset_2[3];
 	int offset_1i;
 	int offset_2i;
+	char sign;
 } config_tmp;
 
 char *pos;
@@ -95,6 +100,11 @@ static void udp_client_task(void *pvParameters)
 	int addr_family;
 	int ip_protocol;
 
+	struct timeval read_timeout;
+	read_timeout.tv_sec = 2;
+	read_timeout.tv_usec = 10;
+
+
 	struct tm * ptm;
 	char buf[100]={0};
 	ntp_packet packet = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -108,7 +118,6 @@ static void udp_client_task(void *pvParameters)
 	{
 		printf("\nEnter proper Server_ip\n");
 		vTaskDelete(NULL);
-		//exit(0);
 	}
 
 	destAddr.sin_family = AF_INET;
@@ -120,13 +129,14 @@ static void udp_client_task(void *pvParameters)
 	int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
 	if (sock < 0) {
 		printf("\nunable to create socket\n");
-		//  break;
+		vTaskDelete(NULL);
 	}
+	setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof read_timeout);	
 
 	int err = sendto(sock, (char* ) &packet, sizeof(ntp_packet), 0, (struct sockaddr *) & destAddr, sizeof(destAddr));
 	if (err < 0) {
-		printf("\nunable to send packet\n");
-		//               break;
+		printf("\nunable to connect\n");
+		vTaskDelete(NULL);
 	}
 
 	struct sockaddr_in sourceAddr; 
@@ -134,17 +144,22 @@ static void udp_client_task(void *pvParameters)
 
 	int len = recvfrom(sock, (char*) &packet, sizeof(ntp_packet), 0, (struct sockaddr *)&sourceAddr, &socklen);
 
-	if (len < 0) {
-		printf("\nunable to receive packet\n");
-		//break;
+	if (len < 1) {
+		printf("\nunable to connect\n");
+		vTaskDelete(NULL);
 	}
 	else {
 
 		time_t txTm = ntohl(packet.txTm_s);
 		txTm = (time_t)(txTm -NTP_TIMESTAMP_DELTA);
-		//txTm = txTm + ((5 * 60 + 30)*60);
 
+		if(config_tmp.sign == '+'){
 		txTm = txTm + ((config_tmp.offset_1i * 60 + config_tmp.offset_2i)*60);
+		}
+		else if(config_tmp.sign == '-'){
+		txTm = txTm - ((config_tmp.offset_1i * 60 + config_tmp.offset_2i)*60);
+		}
+
 		ptm = localtime(&txTm);
 
 		switch(config_tmp.format_1)
@@ -201,7 +216,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 			s_retry_num++;
 			ESP_LOGI(TAG, "retry to connect to the AP");
 		} else {
-			gpio_set_level(2,0);
+			gpio_set_level(GPIO_OUTPUT_IO_0,0);
 
 			xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
 		}
@@ -260,10 +275,10 @@ void wifi_init_sta(void)
 	} else if (bits & WIFI_FAIL_BIT) {
 		ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
 				EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
-		gpio_set_level(2,0);
+		gpio_set_level(GPIO_OUTPUT_IO_0,0);
 	} else {
 		ESP_LOGE(TAG, "UNEXPECTED EVENT");
-		gpio_set_level(2,0);
+		gpio_set_level(GPIO_OUTPUT_IO_0,0);
 	}
 }
 
@@ -287,15 +302,12 @@ static void echo_task()
 	uart_param_config(UART_NUM_0, &uart_config);
 	uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
 
-	// Configure a temporary buffer for the incoming data
 	uint8_t *ch = (uint8_t *) malloc(BUF_SIZE);
 
 
 	strcpy(config_tmp.host_name,CONFIG_TMP_IP);
-	//	uart_write_bytes(UART_NUM_0, (const char *)config_tmp.host_name, strlen(config_tmp.host_name));
 
 	strcpy(config_tmp.zone,CONFIG_TMP_ZONE);
-	//	uart_write_bytes(UART_NUM_0, (const char *)config_tmp.zone, strlen(config_tmp.zone));
 
 	config_tmp.format_1 = CONFIG_TMP_FORMAT;
 
@@ -305,18 +317,16 @@ static void echo_task()
 
 		if(len!=0){
 			if(*ch == '\n' || *ch == '\r'){
-				//cmd[i++] = '\0';
+				memset(target,0,sizeof(target));				
 				cmd[i] = 0;
 				i = 0;
-				memset(target,0,sizeof(target));				
-
+				n=0;
 				for(s=0; 1; s++)
 				{
 
 					if(cmd[s] != ' ' && cmd[s]!= '\0' && cmd[s] != 0 ){
 						//  storing each letter
 						target[n][j++] = cmd[s];
-						//uart_write_bytes(UART_NUM_0, (const char *)target[n], j);
 					}
 					else{
 						//  storing each word
@@ -328,8 +338,6 @@ static void echo_task()
 					if(cmd[s]== '\0' || cmd[s] == 0)
 					{
 
-						//if(strcmp(cmd,"./get_time")==0){
-						if(strcmp(cmd,"./get_time")==0){
 							strcpy(config_tmp.host_name,CONFIG_TMP_IP);
 							strcpy(config_tmp.zone,CONFIG_TMP_ZONE);
 
@@ -372,19 +380,19 @@ static void echo_task()
 								config_tmp.offset_2[1]=*(pos+2);
 							}
 							else{
-								printf("\nEnter correct timezone\n");
+								printf("\nenter correct timezone\n");
 								break;
 							}
 							config_tmp.offset_2[2]='\0';
 
 							config_tmp.offset_1i = atoi(config_tmp.offset_1);
 							config_tmp.offset_2i = atoi(config_tmp.offset_2);
-						//if(strcmp(cmd,"./get_time")==0){
+						if(strcmp(cmd,"get_time")==0){
 							xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
 							break;
 						}
 
-						else if(strstr(cmd,"./get_time")!=0){
+						else if(strcmp(target[0],"get_time")==0){
 							for(s=0; s<n ;s++)
 							{
 								if(strcmp(target[s],"-s")==0)
@@ -396,8 +404,24 @@ static void echo_task()
 									strcpy(config_tmp.zone,target[s+1]);
 
 									pos = strstr(config_tmp.zone,"UTC");
+									if(pos==NULL){
+	                                                                        printf("\nEnter correct timezone-2\n");
+                                                                                error=1;
+                                                                                break;
+									}
 									pos = pos+3;
 
+                                                                        if(*pos=='+'){
+										config_tmp.sign='+';
+									}
+                                                                        else if(*pos=='-'){
+										config_tmp.sign='-';
+									}
+									else{
+	                                                                        printf("\nEnter correct timezone\n");
+                                                                                error=1;
+                                                                                break;
+									}
 									if((*(pos+1) >= 48 && *(pos+1) <= 50)){
 										config_tmp.offset_1[0]=*(pos+1);
 									}
@@ -434,7 +458,7 @@ static void echo_task()
 										break;
 									}
 									config_tmp.offset_2[2]='\0';
-
+                                                                       
 
 									config_tmp.offset_1i = atoi(config_tmp.offset_1);
 									config_tmp.offset_2i = atoi(config_tmp.offset_2);
@@ -443,6 +467,7 @@ static void echo_task()
 								else if(strcmp(target[s],"-f")==0)
 								{
 									strcpy(config_tmp.format,target[s+1]);
+
 									config_tmp.format_1=atoi(config_tmp.format);
 									if(config_tmp.format_1 <1 && config_tmp.format_1 > 4){
 										printf("\nEnter correct Format\n");
@@ -450,12 +475,9 @@ static void echo_task()
 										break;
 									}
 								}
-								//xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
-								//break;
 							}
 							if(error == 1)
 							{
-								//xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
 								error=0;
 								break;
 							}
@@ -465,6 +487,7 @@ static void echo_task()
 							break;
 						}
 						else{
+							n=0;
 							printf("\nPlease enter cmd properly\n");
 							break;
 						}
@@ -499,13 +522,11 @@ void hw_timer_callback1(void *arg)
 		else{ 
 			state2=0;
 		}
-		//gpio_set_level(GPIO_OUTPUT_IO_0,1);
 	}
 	else if(state2==5)
 	{
 		state2 = 0;
-		///gpio_set_level(GPIO_OUTPUT_IO_0,0);
-		gpio_set_level(2,1);
+		gpio_set_level(GPIO_OUTPUT_IO_1,0);
 	}
 }
 
@@ -522,13 +543,19 @@ static void timer_reset_task()
 static void gpio_init()
 {
 	gpio_config_t io_conf;
+
 	io_conf.intr_type = GPIO_INTR_DISABLE;
 	io_conf.mode = GPIO_MODE_OUTPUT;
+
 	io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
+	io_conf.pin_bit_mask |= GPIO_OUTPUT_PIN_SEL_2;
+
 	io_conf.pull_down_en = 0;
 	io_conf.pull_up_en = 0;
 	gpio_config(&io_conf);
-	gpio_set_level(2,1);
+
+	gpio_set_level(GPIO_OUTPUT_IO_0,1);
+	gpio_set_level(GPIO_OUTPUT_IO_1,1);
 }
 
 void app_main()
