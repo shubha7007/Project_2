@@ -1,10 +1,10 @@
 /*  Get_time
 
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
+    This example code is in the Public Domain (or CC0 licensed, at your option.)
 
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
+    Unless required by applicable law or agreed to in writing, this
+    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+    CONDITIONS OF ANY KIND, either express or implied.
  */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
@@ -48,7 +48,6 @@
 #define EXAMPLE_ESP_WIFI_SSID      CONFIG_ESP_WIFI_SSID
 #define EXAMPLE_ESP_WIFI_PASS      CONFIG_ESP_WIFI_PASSWORD
 #define EXAMPLE_ESP_MAXIMUM_RETRY  CONFIG_ESP_MAXIMUM_RETRY
-//#define MSG_NOBLOCK 0x01
 
 static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
@@ -85,6 +84,7 @@ struct {
 	char sign;
 } config_tmp;
 
+
 char *pos;
 
 #define TEST_ONE_SHOT    false  
@@ -113,7 +113,7 @@ static void udp_client_task(void *pvParameters)
 
 	struct sockaddr_in destAddr;
 	destAddr.sin_addr.s_addr = inet_addr(config_tmp.host_name);
-	
+
 	if(destAddr.sin_addr.s_addr == INADDR_NONE)
 	{
 		printf("\nEnter proper Server_ip\n");
@@ -154,10 +154,10 @@ static void udp_client_task(void *pvParameters)
 		txTm = (time_t)(txTm -NTP_TIMESTAMP_DELTA);
 
 		if(config_tmp.sign == '+'){
-		txTm = txTm + ((config_tmp.offset_1i * 60 + config_tmp.offset_2i)*60);
+			txTm = txTm + ((config_tmp.offset_1i * 60 + config_tmp.offset_2i)*60);
 		}
 		else if(config_tmp.sign == '-'){
-		txTm = txTm - ((config_tmp.offset_1i * 60 + config_tmp.offset_2i)*60);
+			txTm = txTm - ((config_tmp.offset_1i * 60 + config_tmp.offset_2i)*60);
 		}
 
 		ptm = localtime(&txTm);
@@ -218,7 +218,6 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 		} else {
 			gpio_set_level(GPIO_OUTPUT_IO_0,0);
 
-			xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
 		}
 		ESP_LOGI(TAG,"connect to the AP fail");
 	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -338,55 +337,71 @@ static void echo_task()
 					if(cmd[s]== '\0' || cmd[s] == 0)
 					{
 
-							strcpy(config_tmp.host_name,CONFIG_TMP_IP);
-							strcpy(config_tmp.zone,CONFIG_TMP_ZONE);
+						strcpy(config_tmp.host_name,CONFIG_TMP_IP);
+						strcpy(config_tmp.zone,CONFIG_TMP_ZONE);
 
-                                                        if(CONFIG_TMP_FORMAT>0 && CONFIG_TMP_FORMAT <5){
+						if(CONFIG_TMP_FORMAT>0 && CONFIG_TMP_FORMAT <5){
 							config_tmp.format_1 = CONFIG_TMP_FORMAT;
-							}
-							else{
-								printf("\nEnter correct Format\n");
-								break;
-							}
-							
-							pos = strstr(config_tmp.zone,"UTC");
-							pos = pos+3;
+						}
+						else{
+							printf("\nEnter correct Format\n");
+							break;
+						}
 
-							if((*(pos+1) >= 48 && *(pos+1) <= 50)){
-								config_tmp.offset_1[0]=*(pos+1);
-							}
-							else{
-								printf("\nEnter correct timezone\n");
-								break;
-							}
-							if(*(pos+2) >= 48 && *(pos+2) <= 57){
-								config_tmp.offset_1[1]=*(pos+2);
-							}else
-							{
-								printf("\nEnter correct timezone\n");
-								break;	
-							}
-							config_tmp.offset_1[2]='\0';
+						pos = strstr(config_tmp.zone,"UTC");
+						if(pos==NULL){
+							printf("\nEnter correct timezone-2\n");
+							error=1;
+							break;
+						}
+						pos = pos+3;
+						if(*pos=='+'){
+							config_tmp.sign='+';
+						}
+						else if(*pos=='-'){
+							config_tmp.sign='-';
+						}
+						else{
+							printf("\nEnter correct timezone\n");
+							error=1;
+							break;
+						}
 
-							pos = strstr(config_tmp.zone,":");
-							if(*(pos+1) >= 48 && *(pos+1) <= 54){
-								config_tmp.offset_2[0]=*(pos+1);
-							}
-							else{
-								printf("\nEnter correct timezone\n");
-								break;
-							}
-							if(*(pos+2) >= 48 && *(pos+2) <= 57){
-								config_tmp.offset_2[1]=*(pos+2);
-							}
-							else{
-								printf("\nenter correct timezone\n");
-								break;
-							}
-							config_tmp.offset_2[2]='\0';
+						if((*(pos+1) >= 48 && *(pos+1) <= 50)){
+							config_tmp.offset_1[0]=*(pos+1);
+						}
+						else{
+							printf("\nEnter correct timezone\n");
+							break;
+						}
+						if(*(pos+2) >= 48 && *(pos+2) <= 57){
+							config_tmp.offset_1[1]=*(pos+2);
+						}else
+						{
+							printf("\nEnter correct timezone\n");
+							break;	
+						}
+						config_tmp.offset_1[2]='\0';
 
-							config_tmp.offset_1i = atoi(config_tmp.offset_1);
-							config_tmp.offset_2i = atoi(config_tmp.offset_2);
+						pos = strstr(config_tmp.zone,":");
+						if(*(pos+1) >= 48 && *(pos+1) <= 54){
+							config_tmp.offset_2[0]=*(pos+1);
+						}
+						else{
+							printf("\nEnter correct timezone\n");
+							break;
+						}
+						if(*(pos+2) >= 48 && *(pos+2) <= 57){
+							config_tmp.offset_2[1]=*(pos+2);
+						}
+						else{
+							printf("\nenter correct timezone\n");
+							break;
+						}
+						config_tmp.offset_2[2]='\0';
+
+						config_tmp.offset_1i = atoi(config_tmp.offset_1);
+						config_tmp.offset_2i = atoi(config_tmp.offset_2);
 						if(strcmp(cmd,"get_time")==0){
 							xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
 							break;
@@ -398,29 +413,44 @@ static void echo_task()
 								if(strcmp(target[s],"-s")==0)
 								{
 									strcpy(config_tmp.host_name,target[s+1]);
+
+									if(INADDR_NONE==inet_addr(config_tmp.host_name))
+									{
+										printf("\nEnter correct Server_ip\n");
+										error=1;
+										break;
+									}
 								}
 								else if(strcmp(target[s],"-z")==0)
 								{
 									strcpy(config_tmp.zone,target[s+1]);
 
+
+									if((target[s+1][0]!= 'U') && target[s+1][1]!='T' && target[s+1][2]!= 'C'){
+										printf("\n Enter correct timezone\n");
+										error=1;
+										break;
+									}
+
+
 									pos = strstr(config_tmp.zone,"UTC");
 									if(pos==NULL){
-	                                                                        printf("\nEnter correct timezone-2\n");
-                                                                                error=1;
-                                                                                break;
+										printf("\nEnter correct timezone\n");
+										error=1;
+										break;
 									}
 									pos = pos+3;
 
-                                                                        if(*pos=='+'){
+									if(*pos=='+'){
 										config_tmp.sign='+';
 									}
-                                                                        else if(*pos=='-'){
+									else if(*pos=='-'){
 										config_tmp.sign='-';
 									}
 									else{
-	                                                                        printf("\nEnter correct timezone\n");
-                                                                                error=1;
-                                                                                break;
+										printf("\nEnter correct timezone\n");
+										error=1;
+										break;
 									}
 									if((*(pos+1) >= 48 && *(pos+1) <= 50)){
 										config_tmp.offset_1[0]=*(pos+1);
@@ -440,6 +470,12 @@ static void echo_task()
 									}
 									config_tmp.offset_1[2]='\0';
 
+									if(*(pos+3)!=':'){
+										printf("\n Enter correct timezone\n");
+										error=1;
+										break;
+									}
+
 									pos = strstr(config_tmp.zone,":");
 									if(*(pos+1) >= 48 && *(pos+1) <= 54){
 										config_tmp.offset_2[0]=*(pos+1);
@@ -458,7 +494,12 @@ static void echo_task()
 										break;
 									}
 									config_tmp.offset_2[2]='\0';
-                                                                       
+									if(*(pos+3)!='\0'){
+										printf("\n Enter correct timezone\n");
+										error=1;
+										break;
+									}
+
 
 									config_tmp.offset_1i = atoi(config_tmp.offset_1);
 									config_tmp.offset_2i = atoi(config_tmp.offset_2);
@@ -469,7 +510,7 @@ static void echo_task()
 									strcpy(config_tmp.format,target[s+1]);
 
 									config_tmp.format_1=atoi(config_tmp.format);
-									if(config_tmp.format_1 <1 && config_tmp.format_1 > 4){
+									if(config_tmp.format_1 <1 || config_tmp.format_1 > 4){
 										printf("\nEnter correct Format\n");
 										error=1;
 										break;
@@ -481,14 +522,16 @@ static void echo_task()
 								error=0;
 								break;
 							}
-								xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+							xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
 
 							n=0;
 							break;
 						}
 						else{
 							n=0;
-							printf("\nPlease enter cmd properly\n");
+							printf("\nPlease enter cmd properly as given below\n");
+							printf("get_time -s server_ip -z timezone -f format\n");
+							printf("EXAMPLE: get_time -s 66.151.147.38 -z UTC+05:30 -f 1\n");
 							break;
 						}
 					}
@@ -515,8 +558,9 @@ void hw_timer_callback1(void *arg)
 	{
 		state =0;
 
-		// if want here will come rtc code
-		if(1){
+		/****   get time and updating RTC code will come here ****/
+		/*** error replace 0 with 1 in below command    ****/
+		if(0){
 			state2++;
 		}
 		else{ 
